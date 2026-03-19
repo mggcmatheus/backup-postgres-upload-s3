@@ -72,11 +72,11 @@ echo "🧹 Arquivo local removido"
 # =========================
 echo "🧠 Aplicando retenção (7 dias)..."
 
-LIMIT_DATE=$(date -u +%s)
+LIMIT_DATE=$(date +%s)
 LIMIT_DATE=$((LIMIT_DATE - 7*24*60*60))
 
-aws s3 ls "s3://${R2_BUCKET}/${PREFIX}/" \
-  --endpoint-url "${R2_ENDPOINT}" > /tmp/r2_files.txt
+aws s3 ls "s3://${R2_BUCKET}" --recursive \
+  --endpoint-url "${R2_ENDPOINT}" | grep "${PREFIX}/" > /tmp/r2_files.txt
 
 while read -r line; do
   FILE_DATE=$(echo "$line" | awk '{print $1" "$2}')
@@ -86,16 +86,17 @@ while read -r line; do
     continue
   fi
 
-  if [[ ! "$FILE_NAME" =~ ^backup_.*\.dump$ ]]; then
+  # só remove arquivos válidos
+  if [[ ! "$FILE_NAME" =~ ^${PREFIX}/backup_.*\.dump$ ]]; then
     continue
   fi
 
-  FILE_TS=$(date -u -d "$FILE_DATE" +%s 2>/dev/null || echo 0)
+  FILE_TS=$(date -d "$FILE_DATE" +%s 2>/dev/null || echo 0)
 
   if [[ $FILE_TS -lt $LIMIT_DATE ]]; then
     echo "🗑️ Removendo: $FILE_NAME"
 
-    aws s3 rm "s3://${R2_BUCKET}/${PREFIX}/${FILE_NAME}" \
+    aws s3 rm "s3://${R2_BUCKET}/${FILE_NAME}" \
       --endpoint-url "${R2_ENDPOINT}"
   fi
 done < /tmp/r2_files.txt
