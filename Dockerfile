@@ -6,11 +6,8 @@ RUN apk add --no-cache \
     bash \
     curl \
     ca-certificates \
-    tzdata
-
-# Instalar AWS CLI (compatível com R2)
-RUN apk add --no-cache python3 py3-pip && \
-    pip install --no-cache-dir awscli
+    tzdata \
+    aws-cli
 
 WORKDIR /app
 
