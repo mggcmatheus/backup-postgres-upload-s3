@@ -1,8 +1,6 @@
-FROM alpine:3.20
+FROM postgres:17-alpine
 
-# Instalar dependências
 RUN apk add --no-cache \
-    postgresql-client \
     bash \
     curl \
     ca-certificates \
