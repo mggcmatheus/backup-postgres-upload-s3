@@ -76,7 +76,7 @@ LIMIT_DATE=$(date +%s)
 LIMIT_DATE=$((LIMIT_DATE - 7*24*60*60))
 
 aws s3 ls "s3://${R2_BUCKET}" --recursive \
-  --endpoint-url "${R2_ENDPOINT}" | grep "${PREFIX}/" > /tmp/r2_files.txt
+  --endpoint-url "${R2_ENDPOINT}" | grep "${PREFIX}/" > /tmp/r2_files.txt || true
 
 while read -r line; do
   FILE_DATE=$(echo "$line" | awk '{print $1" "$2}')
