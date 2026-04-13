@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+
+set -e
+
+echo "🚀 Iniciando restore no STAGE..."
+
+PREFIX="prod"
+
+export AWS_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID}"
+export AWS_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY}"
+
+# =========================
+# Buscar último backup
+# =========================
+echo "🔎 Buscando último backup..."
+
+LATEST_FILE=$(aws s3 ls "s3://${R2_BUCKET}/${PREFIX}/" \
+  --endpoint-url "${R2_ENDPOINT}" \
+  | sort | tail -n 1 | awk '{print $4}')
+
+if [[ -z "$LATEST_FILE" ]]; then
+  echo "❌ Nenhum backup encontrado"
+  exit 1
+fi
+
+echo "📦 Último backup: ${LATEST_FILE}"
+
+FILEPATH="/tmp/restore.dump"
+
+# =========================
+# Download
+# =========================
+echo "⬇️ Baixando backup..."
+
+aws s3 cp \
+  "s3://${R2_BUCKET}/${PREFIX}/${LATEST_FILE}" \
+  "${FILEPATH}" \
+  --endpoint-url "${R2_ENDPOINT}"
+
+echo "✅ Download concluído"
+
+# =========================
+# Derrubar conexões
+# =========================
+echo "🔪 Encerrando conexões ativas..."
+
+psql "$DATABASE_URL" -c "
+SELECT pg_terminate_backend(pid)
+FROM pg_stat_activity
+WHERE datname = current_database()
+AND pid <> pg_backend_pid();
+"
+
+# =========================
+# Limpar banco
+# =========================
+echo "🧹 Limpando schema..."
+
+psql "$DATABASE_URL" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+
+# =========================
+# Restore
+# =========================
+echo "♻️ Restaurando backup..."
+
+pg_restore \
+  --no-owner \
+  --no-privileges \
+  --clean \
+  --if-exists \
+  -d "$DATABASE_URL" \
+  "${FILEPATH}"
+
+echo "✅ Restore concluído"
+
+rm -f "${FILEPATH}"
+
+echo "🎉 STAGE atualizado com sucesso!"
