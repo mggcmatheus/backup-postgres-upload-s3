@@ -1,31 +1,33 @@
 #!/usr/bin/env bash
 
-set -e
+set -euo pipefail
 
 echo "🚀 Iniciando restore no STAGE..."
 
-PREFIX="prod"
+PREFIX="billings-ease-prod-bkp/prod"
+FILEPATH="/tmp/restore.dump"
 
 export AWS_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID}"
 export AWS_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY}"
 
 # =========================
-# Buscar último backup
+# Buscar último backup (ROBUSTO)
 # =========================
 echo "🔎 Buscando último backup..."
 
-LATEST_FILE=$(aws s3 ls "s3://${R2_BUCKET}/${PREFIX}/" \
-  --endpoint-url "${R2_ENDPOINT}" \
-  | sort | tail -n 1 | awk '{print $4}')
+LATEST_FILE=$(aws s3api list-objects-v2 \
+  --bucket "$R2_BUCKET" \
+  --prefix "$PREFIX/" \
+  --endpoint-url "$R2_ENDPOINT" \
+  --query 'sort_by(Contents, &LastModified)[-1].Key' \
+  --output text)
 
-if [[ -z "$LATEST_FILE" ]]; then
+if [[ -z "$LATEST_FILE" || "$LATEST_FILE" == "None" ]]; then
   echo "❌ Nenhum backup encontrado"
   exit 1
 fi
 
 echo "📦 Último backup: ${LATEST_FILE}"
-
-FILEPATH="/tmp/restore.dump"
 
 # =========================
 # Download
@@ -33,10 +35,17 @@ FILEPATH="/tmp/restore.dump"
 echo "⬇️ Baixando backup..."
 
 aws s3 cp \
-  "s3://${R2_BUCKET}/${PREFIX}/${LATEST_FILE}" \
+  "s3://${R2_BUCKET}/${LATEST_FILE}" \
   "${FILEPATH}" \
   --endpoint-url "${R2_ENDPOINT}"
 
+# valida arquivo
+if [[ ! -s "${FILEPATH}" ]]; then
+  echo "❌ Download inválido (arquivo vazio ou não encontrado)"
+  exit 1
+fi
+
+ls -lh "${FILEPATH}"
 echo "✅ Download concluído"
 
 # =========================
@@ -63,7 +72,7 @@ psql "$DATABASE_URL" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
 # =========================
 echo "♻️ Restaurando backup..."
 
-pg_restore \
+timeout 10m pg_restore \
   --no-owner \
   --no-privileges \
   --clean \
@@ -73,6 +82,10 @@ pg_restore \
 
 echo "✅ Restore concluído"
 
+# =========================
+# Limpeza
+# =========================
 rm -f "${FILEPATH}"
+echo "🧹 Arquivo local removido"
 
 echo "🎉 STAGE atualizado com sucesso!"
