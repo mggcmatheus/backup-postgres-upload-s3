@@ -17,9 +17,8 @@ echo "🔎 Buscando último backup..."
 
 LATEST_FILE=$(aws s3api list-objects-v2 \
   --bucket "$R2_BUCKET" \
-  --prefix "$PREFIX/" \
   --endpoint-url "$R2_ENDPOINT" \
-  --query 'sort_by(Contents, &LastModified)[-1].Key' \
+  --query "sort_by(Contents[?starts_with(Key, 'billings-ease-prod-bkp/prod/')], &LastModified)[-1].Key" \
   --output text)
 
 if [[ -z "$LATEST_FILE" || "$LATEST_FILE" == "None" ]]; then
