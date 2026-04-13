@@ -9,16 +9,17 @@ FILEPATH="/tmp/restore.dump"
 
 export AWS_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID}"
 export AWS_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY}"
+export PGPASSWORD="${PGPASSWORD}"
 
 # =========================
-# Buscar último backup (ROBUSTO)
+# Buscar último backup
 # =========================
 echo "🔎 Buscando último backup..."
 
 LATEST_FILE=$(aws s3api list-objects-v2 \
   --bucket "$R2_BUCKET" \
   --endpoint-url "$R2_ENDPOINT" \
-  --query "sort_by(Contents[?starts_with(Key, 'billings-ease-prod-bkp/prod/')], &LastModified)[-1].Key" \
+  --query "sort_by(Contents[?starts_with(Key, '${PREFIX}/')], &LastModified)[-1].Key" \
   --output text)
 
 if [[ -z "$LATEST_FILE" || "$LATEST_FILE" == "None" ]]; then
@@ -48,11 +49,30 @@ ls -lh "${FILEPATH}"
 echo "✅ Download concluído"
 
 # =========================
+# Teste de conexão com retry
+# =========================
+echo "🔎 Testando conexão com banco..."
+
+for i in {1..5}; do
+  if pg_isready -h "$PGHOST" -p "$PGPORT" -U "$PGUSER"; then
+    echo "✅ Banco disponível"
+    break
+  fi
+  echo "⏳ Tentativa $i falhou... aguardando"
+  sleep 2
+done
+
+# =========================
 # Derrubar conexões
 # =========================
 echo "🔪 Encerrando conexões ativas..."
 
-psql "$DATABASE_URL" -c "
+psql \
+  -h "$PGHOST" \
+  -p "$PGPORT" \
+  -U "$PGUSER" \
+  -d "$PGDATABASE" \
+  -c "
 SELECT pg_terminate_backend(pid)
 FROM pg_stat_activity
 WHERE datname = current_database()
@@ -60,11 +80,16 @@ AND pid <> pg_backend_pid();
 "
 
 # =========================
-# Limpar banco
+# Limpar schema
 # =========================
 echo "🧹 Limpando schema..."
 
-psql "$DATABASE_URL" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+psql \
+  -h "$PGHOST" \
+  -p "$PGPORT" \
+  -U "$PGUSER" \
+  -d "$PGDATABASE" \
+  -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
 
 # =========================
 # Restore
@@ -72,11 +97,14 @@ psql "$DATABASE_URL" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
 echo "♻️ Restaurando backup..."
 
 timeout 10m pg_restore \
+  -h "$PGHOST" \
+  -p "$PGPORT" \
+  -U "$PGUSER" \
+  -d "$PGDATABASE" \
   --no-owner \
   --no-privileges \
   --clean \
   --if-exists \
-  -d "$DATABASE_URL" \
   "${FILEPATH}"
 
 echo "✅ Restore concluído"
