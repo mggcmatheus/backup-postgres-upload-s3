@@ -1,0 +1,16 @@
+FROM postgres:17-alpine
+
+RUN apk add --no-cache \
+    bash \
+    curl \
+    ca-certificates \
+    tzdata \
+    aws-cli
+
+WORKDIR /app
+
+COPY restore.sh /app/restore.sh
+
+RUN chmod +x /app/restore.sh
+
+CMD ["/app/restore.sh"]
