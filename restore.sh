@@ -4,7 +4,9 @@ set -euo pipefail
 
 echo "🚀 Iniciando restore no STAGE..."
 
-PREFIX="billings-ease-prod-bkp/prod"
+# Mesma variável do backup.sh: se os dois divergirem, o restore procura num
+# caminho onde nada é gravado e o drill passa a validar o vazio.
+PREFIX="${BACKUP_PREFIX:-prod}"
 FILEPATH="/tmp/restore.dump"
 
 export AWS_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID}"
@@ -53,14 +55,21 @@ echo "✅ Download concluído"
 # =========================
 echo "🔎 Testando conexão com banco..."
 
+CONECTOU=0
 for i in {1..5}; do
   if pg_isready -h "$PGHOST" -p "$PGPORT" -U "$PGUSER"; then
     echo "✅ Banco disponível"
+    CONECTOU=1
     break
   fi
   echo "⏳ Tentativa $i falhou... aguardando"
   sleep 2
 done
+
+if [[ "$CONECTOU" -eq 0 ]]; then
+  echo "❌ Banco indisponível após 5 tentativas. Restore abortado." >&2
+  exit 1
+fi
 
 # =========================
 # Derrubar conexões
